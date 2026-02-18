@@ -11,7 +11,6 @@
  * - reflect() for disposition-aware reasoning
  */
 
-import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 // ============================================================================
@@ -249,10 +248,10 @@ const memoryPlugin = {
         label: "Memory Search (Hindsight)",
         description:
           "Search through long-term memories. Use when you need context about user preferences, past decisions, or previously discussed topics. Uses semantic, keyword, graph, and temporal search.",
-        parameters: Type.Object({
-          query: Type.String({ description: "Search query" }),
-          limit: Type.Optional(Type.Number({ description: "Max results (default: 5)" })),
-        }),
+        parameters: { type: "object", properties: {
+          query: { type: "string", description: "Search query" },
+          limit: { type: "number", description: "Max results (default: 5)" },
+        }, required: ["query"] },
         async execute(_id, params) {
           const { query, limit } = params as { query: string; limit?: number };
           await ensureBank();
@@ -300,10 +299,10 @@ const memoryPlugin = {
         label: "Memory Store (Hindsight)",
         description:
           "Save information in long-term memory. Hindsight automatically extracts facts, entities, and relationships. Use for preferences, decisions, facts worth remembering.",
-        parameters: Type.Object({
-          text: Type.String({ description: "Information to remember" }),
-          context: Type.Optional(Type.String({ description: "Optional context/category" })),
-        }),
+        parameters: { type: "object", properties: {
+          text: { type: "string", description: "Information to remember" },
+          context: { type: "string", description: "Optional context/category" },
+        }, required: ["text"] },
         async execute(_id, params) {
           const { text, context } = params as { text: string; context?: string };
           await ensureBank();
@@ -330,9 +329,9 @@ const memoryPlugin = {
         name: "memory_get",
         label: "Memory Get (Hindsight)",
         description: "Retrieve a specific memory by ID.",
-        parameters: Type.Object({
-          memoryId: Type.String({ description: "Memory ID" }),
-        }),
+        parameters: { type: "object", properties: {
+          memoryId: { type: "string", description: "Memory ID" },
+        }, required: ["memoryId"] },
         async execute(_id, params) {
           const { memoryId } = params as { memoryId: string };
           await ensureBank();
@@ -364,9 +363,9 @@ const memoryPlugin = {
         name: "memory_list",
         label: "Memory List (Hindsight)",
         description: "List stored memories and entities.",
-        parameters: Type.Object({
-          limit: Type.Optional(Type.Number({ description: "Max memories to list (default: 20)" })),
-        }),
+        parameters: { type: "object", properties: {
+          limit: { type: "number", description: "Max memories to list (default: 20)" },
+        } },
         async execute(_id, params) {
           const { limit = 20 } = params as { limit?: number };
           await ensureBank();
@@ -406,10 +405,10 @@ const memoryPlugin = {
         name: "memory_forget",
         label: "Memory Forget (Hindsight)",
         description: "Delete a specific memory by ID, or search and delete.",
-        parameters: Type.Object({
-          memoryId: Type.Optional(Type.String({ description: "Specific memory ID to delete" })),
-          query: Type.Optional(Type.String({ description: "Search query to find memory to delete" })),
-        }),
+        parameters: { type: "object", properties: {
+          memoryId: { type: "string", description: "Specific memory ID to delete" },
+          query: { type: "string", description: "Search query to find memory to delete" },
+        } },
         async execute(_id, params) {
           const { memoryId, query } = params as { memoryId?: string; query?: string };
           await ensureBank();
