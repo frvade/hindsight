@@ -15,7 +15,7 @@ services:
       retries: 10
 
   hindsight:
-    image: ghcr.io/vectorize-io/hindsight-api:slim
+    build: .
     restart: unless-stopped
     depends_on:
       postgres:
@@ -31,12 +31,10 @@ services:
       HINDSIGHT_API_LLM_API_KEY: ${ANTHROPIC_API_KEY}
       HINDSIGHT_API_LLM_MODEL: claude-haiku-4-5-20251001
 
-      # Embeddings (slim image needs external provider)
-      HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
-      HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY: ${OPENAI_API_KEY}
-
-      # Reranker (slim image needs external provider)
-      HINDSIGHT_API_RERANKER_PROVIDER: none
+      # Embeddings & reranker — local models (included in pip install)
+      # Override to use OpenAI embeddings if preferred:
+      # HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
+      # HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY: ${OPENAI_API_KEY}
 
       # Server
       HINDSIGHT_API_HOST: 0.0.0.0
