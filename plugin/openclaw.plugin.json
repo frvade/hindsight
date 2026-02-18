@@ -1,0 +1,52 @@
+{
+  "id": "memory-hindsight",
+  "name": "Memory (Hindsight)",
+  "kind": "memory",
+  "description": "Hindsight-backed long-term memory with auto-recall/capture, knowledge graph, and temporal reasoning",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "description": "Hindsight API base URL",
+        "default": "http://127.0.0.1:8888"
+      },
+      "bankId": {
+        "type": "string",
+        "description": "Memory bank ID",
+        "default": "openclaw"
+      },
+      "namespace": {
+        "type": "string",
+        "description": "Hindsight namespace",
+        "default": "default"
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "description": "Inject relevant memories before each agent turn",
+        "default": true
+      },
+      "autoCapture": {
+        "type": "boolean",
+        "description": "Store conversation facts after each agent turn",
+        "default": true
+      },
+      "recallLimit": {
+        "type": "number",
+        "description": "Max memories to inject on recall",
+        "default": 5
+      },
+      "captureMaxMessages": {
+        "type": "number",
+        "description": "Max recent messages to send for capture",
+        "default": 10
+      }
+    }
+  },
+  "uiHints": {
+    "baseUrl": { "label": "Hindsight API URL", "placeholder": "http://127.0.0.1:8888" },
+    "bankId": { "label": "Memory Bank ID", "placeholder": "openclaw" }
+  }
+}

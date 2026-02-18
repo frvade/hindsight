@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hindsight
+      POSTGRES_USER: hindsight
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hindsight"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight-api:slim
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8888:8888"
+    environment:
+      # Database
+      HINDSIGHT_API_DATABASE_URL: postgresql://hindsight:${POSTGRES_PASSWORD}@postgres:5432/hindsight
+
+      # LLM (for fact extraction, entity resolution, reasoning)
+      HINDSIGHT_API_LLM_PROVIDER: anthropic
+      HINDSIGHT_API_LLM_API_KEY: ${ANTHROPIC_API_KEY}
+      HINDSIGHT_API_LLM_MODEL: claude-haiku-4-5-20251001
+
+      # Embeddings (slim image needs external provider)
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+      # Reranker (slim image needs external provider)
+      HINDSIGHT_API_RERANKER_PROVIDER: none
+
+      # Server
+      HINDSIGHT_API_HOST: 0.0.0.0
+      HINDSIGHT_API_PORT: 8888
+
+volumes:
+  pgdata:
