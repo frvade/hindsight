@@ -18,6 +18,8 @@ A team of agents that can't share memory isn't really a team.
 
 Hindsight solves this with shared memory banks — a single store that every instance reads from and writes to. One agent learns something; every agent knows it. One config change.
 
+> This post is about **shared Hindsight banks across OpenClaw instances**, not OpenClaw `memory-wiki` bridge mode. Today, the `hindsight-openclaw` plugin supports shared banks via Hindsight API configuration, but it does not yet export OpenClaw `publicArtifacts` for `memory-wiki` bridge import.
+
 ---
 
 ## Why Instances Learn in Silos

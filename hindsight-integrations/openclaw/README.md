@@ -31,6 +31,18 @@ That's it! The plugin will automatically start capturing and recalling memories.
 - **Historical backfill CLI** — import prior OpenClaw session history into Hindsight using the active plugin bank-routing config by default
 - **Retention controls** — choose which message roles to retain, toggle auto-retain on/off, and stamp retained documents with consistent tags/source metadata
 
+## Compatibility notes
+
+### OpenClaw `memory-wiki` bridge mode
+
+The Hindsight OpenClaw plugin currently supports the **active memory plugin** flow: retain, recall, bank routing, and backfill.
+
+It does **not** currently export OpenClaw `publicArtifacts`, so `memory-wiki` bridge mode cannot import Hindsight-backed artifacts yet.
+
+In practice, if you set OpenClaw `memory-wiki` to `vaultMode: "bridge"` while `hindsight-openclaw` is the active memory plugin, `openclaw wiki bridge import` will currently import `0` artifacts and `openclaw wiki status` may warn that the active memory plugin is not exporting any public memory artifacts yet.
+
+This is separate from Hindsight's own shared-bank / external-API setup. Shared Hindsight banks work today; OpenClaw `memory-wiki` bridge import from Hindsight does not yet.
+
 ## Configuration
 
 Optional settings in `~/.openclaw/openclaw.json` under `plugins.entries.hindsight-openclaw.config`:

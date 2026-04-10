@@ -67,6 +67,16 @@ The plugin will automatically:
 
 Traditional memory systems give agents a `search_memory` tool - but models don't use it consistently. Auto-recall solves this by injecting memories automatically before every turn.
 
+## Compatibility note: OpenClaw `memory-wiki` bridge mode
+
+The Hindsight OpenClaw plugin currently supports OpenClaw's active memory-plugin flow: retain, recall, bank routing, and historical backfill.
+
+It does **not** currently export OpenClaw `publicArtifacts`, so OpenClaw `memory-wiki` bridge mode cannot yet import Hindsight-backed artifacts.
+
+If you enable `memory-wiki` with `vaultMode: "bridge"` while `hindsight-openclaw` is the active memory plugin, `openclaw wiki bridge import` will currently import `0` artifacts and `openclaw wiki status` may warn that the active memory plugin is not exporting any public memory artifacts yet.
+
+This is separate from Hindsight's own shared-memory setup. Shared banks via external Hindsight API work today. OpenClaw `memory-wiki` bridge import from Hindsight does not yet.
+
 ## Configuration
 
 ### Plugin Settings
