@@ -6,9 +6,25 @@ export interface PluginPromptHookResult {
   appendSystemContext?: string;
 }
 
+export interface MemoryPluginPublicArtifact {
+  kind: string;
+  workspaceDir: string;
+  relativePath: string;
+  absolutePath: string;
+  agentIds: string[];
+  contentType: 'markdown' | 'json' | 'text';
+}
+
+export interface MemoryPluginCapability {
+  publicArtifacts?: {
+    listArtifacts(params: { cfg: MoltbotConfig }): Promise<MemoryPluginPublicArtifact[]>;
+  };
+}
+
 export interface MoltbotPluginAPI {
   config: MoltbotConfig;
   registerService(config: ServiceConfig): void;
+  registerMemoryCapability?(capability: MemoryPluginCapability): void;
   // OpenClaw hook handler signature: (event, ctx?) where ctx contains channel/sender info
   on(event: string, handler: (event: any, ctx?: any) => void | Promise<void | PluginPromptHookResult>): void;
   // OpenClaw framework logger — handles coloring/formatting consistently across plugins
@@ -22,7 +38,13 @@ export interface MoltbotPluginAPI {
 
 export interface MoltbotConfig {
   agents?: {
+    list?: Array<{
+      id?: string;
+      workspace?: string;
+      default?: boolean;
+    }>;
     defaults?: {
+      workspace?: string;
       models?: {
         [modelName: string]: {
           alias?: string;

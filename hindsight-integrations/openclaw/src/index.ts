@@ -1,4 +1,4 @@
-import type { MoltbotPluginAPI, PluginConfig, PluginHookAgentContext, MemoryResult, RetainRequest } from './types.js';
+import type { MoltbotPluginAPI, MoltbotConfig, PluginConfig, PluginHookAgentContext, MemoryResult, RetainRequest, MemoryPluginPublicArtifact } from './types.js';
 import { HindsightServer, type Logger } from '@vectorize-io/hindsight-all';
 import { HindsightClient, type HindsightClientOptions } from '@vectorize-io/hindsight-client';
 import { RetainQueue } from './retain-queue.js';
@@ -8,7 +8,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import * as log from './logger.js';
 import { configureLogger, setApiLogger, stopLogger } from './logger.js';
-import { mkdirSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 
 // Logger adapter that routes the embed wrapper's output through openclaw's
@@ -783,8 +783,8 @@ async function checkExternalApiHealth(apiUrl: string, apiToken?: string | null):
   }
 }
 
-function getPluginConfig(api: MoltbotPluginAPI): PluginConfig {
-  const config = api.config.plugins?.entries?.['hindsight-openclaw']?.config || {};
+export function getPluginConfigFromConfig(rawConfig: MoltbotConfig): PluginConfig {
+  const config = rawConfig.plugins?.entries?.['hindsight-openclaw']?.config || {};
   const defaultMission = 'You are an AI assistant helping users across multiple communication channels (Telegram, Slack, Discord, etc.). Remember user preferences, instructions, and important context from conversations to provide personalized assistance.';
 
   return {
@@ -809,7 +809,7 @@ function getPluginConfig(api: MoltbotPluginAPI): PluginConfig {
     excludeProviders: Array.isArray(config.excludeProviders)
       ? Array.from(new Set(['heartbeat', ...config.excludeProviders.filter((provider): provider is string => typeof provider === 'string')]))
       : ['heartbeat'],
-    autoRecall: config.autoRecall !== false, // Default: true (on) — backward compatible
+    autoRecall: config.autoRecall !== false, // Default: true (on), backward compatible
     dynamicBankGranularity: Array.isArray(config.dynamicBankGranularity) ? config.dynamicBankGranularity : undefined,
     autoRetain: config.autoRetain !== false, // Default: true
     retainRoles: Array.isArray(config.retainRoles) ? config.retainRoles : undefined,
@@ -833,6 +833,156 @@ function getPluginConfig(api: MoltbotPluginAPI): PluginConfig {
     skipStatelessSessions: config.skipStatelessSessions !== false,
     debug: config.debug ?? false,
   };
+}
+
+function getPluginConfig(api: MoltbotPluginAPI): PluginConfig {
+  return getPluginConfigFromConfig(api.config);
+}
+
+type ArtifactWorkspace = {
+  workspaceDir: string;
+  agentIds: string[];
+};
+
+type HindsightBank = {
+  bank_id: string;
+  name?: string | null;
+  mission?: string | null;
+};
+
+type HindsightDocumentListItem = {
+  id: string;
+  bank_id: string;
+  updated_at: string;
+};
+
+type HindsightDocument = {
+  id: string;
+  bank_id: string;
+  original_text: string;
+  created_at: string;
+  updated_at: string;
+  memory_unit_count: number;
+  tags: string[];
+  document_metadata?: Record<string, unknown> | null;
+  retain_params?: Record<string, unknown> | null;
+};
+
+function expandHomePath(input: string): string {
+  if (input === '~') return homedir();
+  if (input.startsWith('~/')) return join(homedir(), input.slice(2));
+  return input;
+}
+
+function getArtifactWorkspaces(cfg: MoltbotConfig): ArtifactWorkspace[] {
+  const entries = Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
+  const defaultWorkspace = typeof cfg.agents?.defaults?.workspace === 'string' && cfg.agents.defaults.workspace.trim()
+    ? expandHomePath(cfg.agents.defaults.workspace.trim())
+    : process.cwd();
+
+  if (entries.length === 0) {
+    return [{ workspaceDir: defaultWorkspace, agentIds: ['main'] }];
+  }
+
+  const defaultAgentId = entries.find((entry) => entry?.default)?.id ?? entries[0]?.id ?? 'main';
+  const byWorkspace = new Map<string, Set<string>>();
+
+  for (const entry of entries) {
+    const agentId = entry?.id?.trim() || 'main';
+    const workspaceDir = typeof entry?.workspace === 'string' && entry.workspace.trim()
+      ? expandHomePath(entry.workspace.trim())
+      : agentId === defaultAgentId
+        ? defaultWorkspace
+        : join(defaultWorkspace, agentId);
+    const agentIds = byWorkspace.get(workspaceDir) ?? new Set<string>();
+    agentIds.add(agentId);
+    byWorkspace.set(workspaceDir, agentIds);
+  }
+
+  return [...byWorkspace.entries()].map(([workspaceDir, agentIds]) => ({ workspaceDir, agentIds: [...agentIds] }));
+}
+
+function buildArtifactRelativePath(bankId: string, documentId: string): string {
+  const safeBankId = bankId.replace(/[^a-zA-Z0-9._-]+/g, '-');
+  const safeDocumentId = documentId.replace(/[^a-zA-Z0-9._-]+/g, '-');
+  const hash = createHash('sha1').update(documentId).digest('hex').slice(0, 10);
+  return join('memory', 'hindsight-bridge', safeBankId || 'bank', `${safeDocumentId || 'document'}-${hash}.md`).replace(/\\/g, '/');
+}
+
+function renderArtifact(bank: HindsightBank, document: HindsightDocument): string {
+  const lines = [
+    `# Hindsight document: ${document.id}`,
+    '',
+    `- Bank ID: \`${document.bank_id}\``,
+    `- Memory units: ${document.memory_unit_count}`,
+    `- Created at: ${document.created_at}`,
+    `- Updated at: ${document.updated_at}`,
+    '',
+  ];
+
+  if (bank.name) lines.push(`- Bank name: ${bank.name}`);
+  if (document.tags.length) lines.push(`- Tags: ${document.tags.map((tag) => `\`${tag}\``).join(', ')}`);
+  if (bank.mission) lines.push('', '## Bank mission', '', bank.mission);
+  if (document.document_metadata && Object.keys(document.document_metadata).length) {
+    lines.push('', '## Document metadata', '', '```json', JSON.stringify(document.document_metadata, null, 2), '```');
+  }
+  if (document.retain_params && Object.keys(document.retain_params).length) {
+    lines.push('', '## Retain params', '', '```json', JSON.stringify(document.retain_params, null, 2), '```');
+  }
+
+  lines.push('', '## Content', '', document.original_text.trimEnd(), '');
+  return lines.join('\n');
+}
+
+async function fetchHindsightJson<T>(apiUrl: string, path: string, apiToken?: string | null): Promise<T> {
+  const response = await fetch(`${apiUrl.replace(/\/$/, '')}${path}`, {
+    headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined,
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${path}`);
+  return response.json() as Promise<T>;
+}
+
+export async function listHindsightPublicArtifacts(cfg: MoltbotConfig): Promise<MemoryPluginPublicArtifact[]> {
+  const pluginConfig = getPluginConfigFromConfig(cfg);
+  const externalApi = detectExternalApi(pluginConfig);
+  if (!externalApi.apiUrl) return [];
+
+  const workspaces = getArtifactWorkspaces(cfg);
+  const banks = await fetchHindsightJson<{ banks: HindsightBank[] }>(externalApi.apiUrl, '/v1/default/banks', externalApi.apiToken);
+  const artifacts: MemoryPluginPublicArtifact[] = [];
+
+  for (const bank of banks.banks || []) {
+    const documents = await fetchHindsightJson<{ items: HindsightDocumentListItem[] }>(
+      externalApi.apiUrl,
+      `/v1/default/banks/${encodeURIComponent(bank.bank_id)}/documents?limit=100&offset=0`,
+      externalApi.apiToken,
+    );
+
+    for (const listedDocument of documents.items || []) {
+      const document = await fetchHindsightJson<HindsightDocument>(
+        externalApi.apiUrl,
+        `/v1/default/banks/${encodeURIComponent(bank.bank_id)}/documents/${encodeURIComponent(listedDocument.id)}`,
+        externalApi.apiToken,
+      );
+      const relativePath = buildArtifactRelativePath(bank.bank_id, listedDocument.id);
+
+      for (const workspace of workspaces) {
+        const absolutePath = join(workspace.workspaceDir, relativePath);
+        mkdirSync(dirname(absolutePath), { recursive: true });
+        writeFileSync(absolutePath, renderArtifact(bank, document), 'utf8');
+        artifacts.push({
+          kind: 'daily-note',
+          workspaceDir: workspace.workspaceDir,
+          relativePath,
+          absolutePath,
+          agentIds: workspace.agentIds,
+          contentType: 'markdown',
+        });
+      }
+    }
+  }
+
+  return artifacts;
 }
 
 export default function (api: MoltbotPluginAPI) {
@@ -1187,6 +1337,17 @@ export default function (api: MoltbotPluginAPI) {
     });
 
     debug('[Hindsight] Plugin loaded successfully');
+
+    if (api.registerMemoryCapability) {
+      api.registerMemoryCapability({
+        publicArtifacts: {
+          listArtifacts: async ({ cfg }) => listHindsightPublicArtifacts(cfg),
+        },
+      });
+      debug('[Hindsight] Registered memory capability with publicArtifacts');
+    } else {
+      log.warn('registerMemoryCapability is not available in this OpenClaw runtime, skipping publicArtifacts registration');
+    }
 
     // Register agent hooks for auto-recall and auto-retention
     if (hooksRegistered) {
