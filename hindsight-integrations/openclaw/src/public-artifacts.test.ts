@@ -83,4 +83,76 @@ describe('public artifacts', () => {
     expect(written).toContain('hello from stored document');
     expect(written).toContain('Remember things');
   });
+
+  it('skips failed per-document fetches and continues export', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'hindsight-artifacts-'));
+
+    const cfg: MoltbotConfig = {
+      agents: {
+        defaults: { workspace: tempDir },
+        list: [{ id: 'main', default: true, workspace: tempDir }],
+      },
+      plugins: {
+        entries: {
+          'hindsight-openclaw': {
+            config: {
+              hindsightApiUrl: 'https://api.example.com',
+            },
+          },
+        },
+      },
+    };
+
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url === 'https://api.example.com/v1/default/banks') {
+        return {
+          ok: true,
+          json: async () => ({
+            banks: [{ bank_id: 'bank-b', name: 'Bank B', mission: 'Test isolation' }],
+          }),
+        };
+      }
+      if (url === 'https://api.example.com/v1/default/banks/bank-b/documents?limit=100&offset=0') {
+        return {
+          ok: true,
+          json: async () => ({
+            items: [
+              { id: 'doc/good', bank_id: 'bank-b', updated_at: '2024-01-02T00:00:00Z' },
+              { id: 'doc/bad', bank_id: 'bank-b', updated_at: '2024-01-02T00:00:00Z' },
+            ],
+          }),
+        };
+      }
+      if (url === 'https://api.example.com/v1/default/banks/bank-b/documents/doc%2Fgood') {
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'doc/good',
+            bank_id: 'bank-b',
+            original_text: 'good document content',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+            memory_unit_count: 1,
+            tags: [],
+            document_metadata: {},
+            retain_params: {},
+          }),
+        };
+      }
+      if (url === 'https://api.example.com/v1/default/banks/bank-b/documents/doc%2Fbad') {
+        return { ok: false, json: async () => ({}) };
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const artifacts = await listHindsightPublicArtifacts(cfg);
+
+    // Only the good document should produce an artifact; the bad one is skipped
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]?.relativePath).toContain('doc-good');
+    const written = readFileSync(artifacts[0]!.absolutePath, 'utf8');
+    expect(written).toContain('good document content');
+  });
 });

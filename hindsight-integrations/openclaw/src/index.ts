@@ -8,7 +8,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import * as log from './logger.js';
 import { configureLogger, setApiLogger, stopLogger } from './logger.js';
-import { mkdirSync, writeFileSync } from 'fs';
+import { mkdir, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 
 // Logger adapter that routes the embed wrapper's output through openclaw's
@@ -951,34 +951,48 @@ export async function listHindsightPublicArtifacts(cfg: MoltbotConfig): Promise<
   const banks = await fetchHindsightJson<{ banks: HindsightBank[] }>(externalApi.apiUrl, '/v1/default/banks', externalApi.apiToken);
   const artifacts: MemoryPluginPublicArtifact[] = [];
 
+  const pageSize = 100;
   for (const bank of banks.banks || []) {
-    const documents = await fetchHindsightJson<{ items: HindsightDocumentListItem[] }>(
-      externalApi.apiUrl,
-      `/v1/default/banks/${encodeURIComponent(bank.bank_id)}/documents?limit=100&offset=0`,
-      externalApi.apiToken,
-    );
-
-    for (const listedDocument of documents.items || []) {
-      const document = await fetchHindsightJson<HindsightDocument>(
+    let offset = 0;
+    while (true) {
+      const documents = await fetchHindsightJson<{ items: HindsightDocumentListItem[] }>(
         externalApi.apiUrl,
-        `/v1/default/banks/${encodeURIComponent(bank.bank_id)}/documents/${encodeURIComponent(listedDocument.id)}`,
+        `/v1/default/banks/${encodeURIComponent(bank.bank_id)}/documents?limit=${pageSize}&offset=${offset}`,
         externalApi.apiToken,
       );
-      const relativePath = buildArtifactRelativePath(bank.bank_id, listedDocument.id);
 
-      for (const workspace of workspaces) {
-        const absolutePath = join(workspace.workspaceDir, relativePath);
-        mkdirSync(dirname(absolutePath), { recursive: true });
-        writeFileSync(absolutePath, renderArtifact(bank, document), 'utf8');
-        artifacts.push({
-          kind: 'daily-note',
-          workspaceDir: workspace.workspaceDir,
-          relativePath,
-          absolutePath,
-          agentIds: workspace.agentIds,
-          contentType: 'markdown',
-        });
+      const items = documents.items ?? [];
+      for (const listedDocument of items) {
+        let document: HindsightDocument;
+        try {
+          document = await fetchHindsightJson<HindsightDocument>(
+            externalApi.apiUrl,
+            `/v1/default/banks/${encodeURIComponent(bank.bank_id)}/documents/${encodeURIComponent(listedDocument.id)}`,
+            externalApi.apiToken,
+          );
+        } catch (err) {
+          log.warn(`[Hindsight] Failed to fetch document ${listedDocument.id} from bank ${bank.bank_id}: ${err}`);
+          continue;
+        }
+        const relativePath = buildArtifactRelativePath(bank.bank_id, listedDocument.id);
+
+        for (const workspace of workspaces) {
+          const absolutePath = join(workspace.workspaceDir, relativePath);
+          await mkdir(dirname(absolutePath), { recursive: true });
+          await writeFile(absolutePath, renderArtifact(bank, document), 'utf8');
+          artifacts.push({
+            kind: 'daily-note',
+            workspaceDir: workspace.workspaceDir,
+            relativePath,
+            absolutePath,
+            agentIds: workspace.agentIds,
+            contentType: 'markdown',
+          });
+        }
       }
+
+      if (items.length < pageSize) break;
+      offset += pageSize;
     }
   }
 
